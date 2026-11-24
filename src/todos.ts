@@ -14,6 +14,14 @@ export function toggle(todos: Todo[], id: number): Todo[] {
   return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
 }
 
+export function editTodo(todos: Todo[], id: number, fields: Partial<Pick<Todo, "title" | "due">>): Todo[] {
+  return todos.map((t) => (t.id === id ? { ...t, ...fields } : t));
+}
+
+export function removeTodo(todos: Todo[], id: number): Todo[] {
+  return todos.filter((t) => t.id !== id);
+}
+
 export function activeCount(todos: Todo[]): number {
   return todos.filter((t) => !t.done).length;
 }

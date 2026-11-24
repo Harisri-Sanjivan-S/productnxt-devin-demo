@@ -6,6 +6,7 @@
   "description": "Tiny to-do library used to demo Devin's Bug-to-PR flow from ProductNXT.",
   "scripts": {
     "start": "node src/cli.ts",
+    "serve": "node src/server.ts",
     "test": "vitest run"
   },
   "devDependencies": {
