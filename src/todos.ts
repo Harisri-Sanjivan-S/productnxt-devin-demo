@@ -29,11 +29,9 @@ export function activeCount(todos: Todo[]): number {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // Days left until a todo is due.
-//
-// BUG: this rounds the millisecond gap up, so the part of today still remaining
-// counts as a whole day and the result reads one too high. A todo due
-// 2026-11-12, viewed on 2026-11-06, should show 5 days left, not 6.
+// The current day is not counted: a todo due 2026-11-12, viewed on
+// 2026-11-06, shows 5 days left.
 export function daysLeft(dueIso: string, now: Date = new Date()): number {
   const due = new Date(dueIso);
-  return Math.ceil((due.getTime() - now.getTime()) / MS_PER_DAY);
+  return Math.ceil((due.getTime() - now.getTime()) / MS_PER_DAY) - 1;
 }
