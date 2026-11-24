@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Tiny to-do library used to demo Devin's Bug-to-PR flow from ProductNXT.",
   "scripts": {
+    "start": "node src/cli.ts",
     "test": "vitest run"
   },
   "devDependencies": {
