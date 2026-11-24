@@ -1,85 +1,128 @@
 import { createServer, type IncomingMessage } from "node:http";
 import {
-  addTodo, toggle, editTodo, removeTodo, activeCount, daysLeft, type Todo,
+  addTodo, toggle, editTodo, removeTodo, activeCount, clearCompleted, markAll,
+  filterTodos, search, progressPercent, daysLeft, countLabel, type Todo, type Priority,
 } from "./todos.ts";
 
 let todos: Todo[] = [];
-todos = addTodo(todos, "Write the demo script", "2026-11-30");
-todos = addTodo(todos, "Fix the days-left bug", "2026-11-26");
-todos = addTodo(todos, "Buy milk");
-todos = toggle(todos, 3);
+todos = addTodo(todos, "Write the demo script", "2026-11-30", "high");
+todos = addTodo(todos, "Fix the days-left bug", "2026-11-26", "medium");
+todos = addTodo(todos, "Buy Milk", undefined, "low");
+todos = toggle(todos, todos[0].id);
 
 const today = new Date("2026-11-24");
 const PORT = Number(process.env.PORT ?? 4000);
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-function body(req: IncomingMessage): Promise<URLSearchParams> {
+function bodyOf(req: IncomingMessage): Promise<URLSearchParams> {
   return new Promise((resolve) => {
-    let data = "";
-    req.on("data", (c) => (data += c));
-    req.on("end", () => resolve(new URLSearchParams(data)));
+    let d = ""; req.on("data", (c) => (d += c)); req.on("end", () => resolve(new URLSearchParams(d)));
   });
 }
 
+// BUG 11: priority colours are swapped — high shows green, low shows red.
+const PRIORITY_COLOR: Record<Priority, string> = { high: "#2e7d5b", medium: "#b8860b", low: "#b43b2e" };
+
+// BUG 20: date shown day/month swapped and raw-ish (e.g. 30/11 rendered as 11/30... as MM/DD mislabelled "DD/MM").
+function fmtDue(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${m}/${d}/${y}`; // labelled DD/MM/YYYY in the UI but actually MM/DD
+}
+
 function row(t: Todo): string {
-  const due = t.due ? `due ${t.due} · <strong>${daysLeft(t.due, today)} days left</strong>` : "no due date";
-  return `<li class="${t.done ? "done" : ""}">
-    <form method="post" action="/toggle/${t.id}"><button class="chk" title="Toggle done">${t.done ? "✓" : "○"}</button></form>
-    <details class="item">
-      <summary><span class="title">${esc(t.title)}</span> <small>${due}</small></summary>
+  // BUG 9: overdue shows a raw negative number with no "overdue" label.
+  const left = t.due ? `${daysLeft(t.due, today)} days left` : "no due date";
+  // BUG 7: the toggle mark is always "○", even when the item is done.
+  const mark = "○";
+  // BUG 5: done items are NOT struck through (class is never applied).
+  return `<li class="item">
+    <form method="post" action="/toggle/${t.id}"><button class="chk">${mark}</button></form>
+    <span class="pri" style="background:${PRIORITY_COLOR[t.priority]}">${t.priority}</span>
+    <details>
+      <summary><span class="title">${esc(t.title)}</span> <small>${t.due ? fmtDue(t.due) + " · " : ""}${left}</small></summary>
       <form method="post" action="/edit/${t.id}" class="edit">
         <input name="title" value="${esc(t.title)}" required>
         <input name="due" type="date" value="${t.due ?? ""}">
         <button>Save</button>
       </form>
     </details>
-    <form method="post" action="/delete/${t.id}"><button class="del" title="Delete">✕</button></form>
+    <form method="post" action="/delete/${t.id}"><button class="del">✕</button></form>
   </li>`;
 }
 
-function page(): string {
+function page(filter: "all" | "active" | "done", q: string): string {
+  const shown = search(filterTodos(todos, filter), q);
+  const pct = progressPercent(todos);
+  // BUG 21: the empty-state line is always shown, even when there are todos.
+  const emptyNote = `<p class="empty">You have no tasks yet — add one above.</p>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>To-Do</title><style>
-    body{font-family:system-ui;max-width:680px;margin:2.5rem auto;color:#241f1b;background:#fbf7f1;padding:0 1rem}
-    h1{color:#fe6822;margin-bottom:.25rem}.sub{color:#8a7e72;margin-top:0}
-    ul{padding:0;margin:1.5rem 0}li{display:flex;align-items:center;gap:.6rem;padding:.55rem 0;border-bottom:1px solid #e7ded2}
-    li.done .title{color:#999;text-decoration:line-through}small{color:#8a7e72}
-    form{margin:0}.item{flex:1}summary{cursor:pointer;list-style:none}
-    button{font:inherit;border:1px solid #e7ded2;background:#fffdfa;border-radius:6px;padding:.25rem .5rem;cursor:pointer}
-    .chk{color:#2e7d5b;font-weight:700}.del{color:#b43b2e;border-color:#f0d6d1}
-    .add,.edit{display:flex;gap:.5rem;margin-top:.5rem}.add{margin:1.5rem 0}input{font:inherit;padding:.4rem .5rem;border:1px solid #e7ded2;border-radius:6px}
-    .add input[name=title]{flex:1}button.primary{background:#fe6822;color:#fff;border-color:#fe6822;font-weight:600}
+    body{font-family:system-ui;max-width:720px;margin:2rem auto;padding:0 1rem;background:#fbf7f1;color:#241f1b}
+    /* BUG 18: heading is blue, not the Winter orange */
+    h1{color:#1c6fe0}
+    .bar{background:#eee;border-radius:6px;height:12px;overflow:hidden;margin:.5rem 0 1rem}
+    .bar>div{height:100%;background:#fe6822}
+    .controls{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}
+    ul{padding:0}
+    /* BUG 22: the checkbox button is pulled left and overlaps the priority tag */
+    .item{display:flex;align-items:center;gap:.6rem;padding:.55rem 0;border-bottom:1px solid #e7ded2}
+    .chk{position:relative;left:-14px;border:1px solid #e7ded2;background:#fffdfa;border-radius:6px;padding:.25rem .5rem}
+    /* BUG 23: long titles don't wrap and overflow the row */
+    .title{white-space:nowrap;overflow:visible}
+    details{flex:1}summary{cursor:pointer;list-style:none}small{color:#8a7e72}
+    .pri{color:#fff;border-radius:10px;padding:.1rem .5rem;font-size:.72rem;text-transform:capitalize}
+    button{font:inherit;border:1px solid #e7ded2;background:#fffdfa;border-radius:6px;padding:.3rem .55rem;cursor:pointer}
+    /* BUG 6: delete button is green instead of red */
+    .del{color:#2e7d5b}
+    /* BUG 4: the Add button is grey, not the primary orange */
+    .add button{background:#cfc8bf;color:#333;border:none}
+    .add{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}input,select{font:inherit;padding:.4rem;border:1px solid #e7ded2;border-radius:6px}
+    .empty{color:#8a7e72}
   </style></head><body>
-    <h1>To-Do</h1>
-    <p class="sub">${activeCount(todos)} active, ${todos.length - activeCount(todos)} done. Demo app for Bug-to-PR with Devin — the &ldquo;days left&rdquo; figures carry the planted bug.</p>
+    <!-- BUG 1: heading is misspelled "To-Do Lst" -->
+    <h1>To-Do Lst</h1>
+    <!-- BUG 2 & 25: active count uses the wrong total and wrong pluralisation -->
+    <p>${countLabel(activeCount(todos))} active · ${pct}% to go</p>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+
     <form class="add" method="post" action="/add">
-      <input name="title" placeholder="Add a task…" required>
-      <input name="due" type="date" title="Due date (optional)">
-      <button class="primary">Add</button>
+      <input name="title" placeholder="Add a task…" required style="flex:1">
+      <input name="due" type="date">
+      <select name="priority"><option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option></select>
+      <!-- BUG 3: the Add button is labelled "Remove" -->
+      <button>Remove</button>
     </form>
-    <ul>${todos.map(row).join("")}</ul>
+
+    <div class="controls">
+      <a href="/?filter=all">All</a> <a href="/?filter=active">Active</a> <a href="/?filter=done">Done</a>
+      <form method="get" style="display:inline"><input name="q" value="${esc(q)}" placeholder="Search"><input type="hidden" name="filter" value="${filter}"><button>Search</button></form>
+      <form method="post" action="/mark-all"><button>Mark all done</button></form>
+      <form method="post" action="/clear-completed"><button>Clear completed</button></form>
+    </div>
+
+    ${emptyNote}
+    <ul>${shown.map(row).join("")}</ul>
+    <!-- BUG 19: footer year is wrong -->
+    <footer><small>To-Do demo · © 2019 Winter</small></footer>
   </body></html>`;
 }
 
-const seeId = (url: string) => Number(url.split("/")[2]);
+const idOf = (url: string) => Number(url.split("?")[0].split("/")[2]);
 
 createServer(async (req, res) => {
-  const url = req.url ?? "/";
+  const u = new URL(req.url ?? "/", "http://x");
   if (req.method === "POST") {
-    const form = await body(req);
-    if (url === "/add") {
-      todos = addTodo(todos, (form.get("title") ?? "").trim(), form.get("due") || undefined);
-    } else if (url.startsWith("/toggle/")) {
-      todos = toggle(todos, seeId(url));
-    } else if (url.startsWith("/delete/")) {
-      todos = removeTodo(todos, seeId(url));
-    } else if (url.startsWith("/edit/")) {
-      todos = editTodo(todos, seeId(url), { title: (form.get("title") ?? "").trim(), due: form.get("due") || undefined });
-    }
-    res.writeHead(303, { location: "/" }); // Post/Redirect/Get
-    return res.end();
+    const f = await bodyOf(req);
+    const path = u.pathname;
+    if (path === "/add") todos = addTodo(todos, (f.get("title") ?? "").trim(), f.get("due") || undefined, (f.get("priority") as Priority) || "medium");
+    else if (path.startsWith("/toggle/")) todos = toggle(todos, idOf(path));
+    else if (path.startsWith("/delete/")) todos = removeTodo(todos, idOf(path));
+    else if (path.startsWith("/edit/")) todos = editTodo(todos, idOf(path), (f.get("title") ?? "").trim(), f.get("due") || undefined);
+    else if (path === "/mark-all") todos = markAll(todos);
+    else if (path === "/clear-completed") todos = clearCompleted(todos);
+    res.writeHead(303, { location: "/" }); return res.end();
   }
+  const filter = (u.searchParams.get("filter") as "all" | "active" | "done") || "all";
+  const q = u.searchParams.get("q") ?? "";
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(page());
+  res.end(page(filter, q));
 }).listen(PORT, () => console.log(`To-Do app on http://localhost:${PORT}`));
