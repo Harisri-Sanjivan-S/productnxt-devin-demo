@@ -89,7 +89,7 @@ function page(filter: "all" | "active" | "done", q: string): string {
       <input name="due" type="date">
       <select name="priority"><option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option></select>
       <!-- BUG 3: the Add button is labelled "Remove" -->
-      <button>Remove</button>
+      <button>Add</button>
     </form>
 
     <div class="controls">
