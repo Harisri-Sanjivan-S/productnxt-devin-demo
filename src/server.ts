@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage } from "node:http";
 import {
   addTodo, toggle, editTodo, removeTodo, activeCount, clearCompleted, markAll,
-  filterTodos, search, progressPercent, daysLeft, countLabel, type Todo, type Priority,
+  filterTodos, search, progressPercent, daysLeft, countLabel, footerText, type Todo, type Priority,
 } from "./todos.ts";
 
 let todos: Todo[] = [];
@@ -102,7 +102,7 @@ function page(filter: "all" | "active" | "done", q: string): string {
     ${emptyNote}
     <ul>${shown.map(row).join("")}</ul>
     <!-- BUG 19: footer year is wrong -->
-    <footer><small>To-Do demo · © 2019 Winter</small></footer>
+    <footer><small>${footerText()}</small></footer>
   </body></html>`;
 }
 
