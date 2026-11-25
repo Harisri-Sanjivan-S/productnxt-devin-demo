@@ -75,3 +75,7 @@ export function daysLeft(dueIso: string, now: Date = new Date()): number {
 export function countLabel(n: number): string {
   return n === 1 ? `${n} tasks` : `${n} task`;
 }
+
+export function footerText(now: Date = new Date()): string {
+  return `To-Do demo · © ${now.getFullYear()} Winter`;
+}
